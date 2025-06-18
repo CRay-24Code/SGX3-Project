@@ -12,7 +12,17 @@ def load_traffic_data():
     print("Loading Austin Traffic Data...")
     traffic_df = pd.read_csv("atxtraffic.csv")
     print(f"Loaded {len(traffic_df)} rows into memory.")
-                   
+
+    if "Published Date" in traffic_df.columns:
+        traffic_df["Published Date"] = pd.to_datetime(traffic_df["Published Date"], errors ="coerce")
+        traffic_df["Year"] = traffic_df["Published Date"].dt.year
+        print("Extracted 'Year' from Published Date'.")
+    else:
+        print("Column 'Published Date' not found.")
+
+    print(f"Loaded {len(traffic_df)} rows into memory.")
+
+
 @app.route("/")
 def index():      
     global traffic_df 
@@ -78,6 +88,16 @@ def unique_values():
 
     unique_vals = traffic_df[column].dropna().unique().tolist()
     return jsonify ({"column": column, "unique_value": unique_vals, "count": len(unique_vals) })
+
+@app.route("/year")
+def get_year():
+    global traffic_df
+    if "Year" not in traffic_df.columns:
+        return jsonify({"error": "Year column not available"}), 500
+
+    years = traffic_df["Year"].dropna().unique().tolist()
+    years.sort()
+    return jsonify({"years":years})
 
 
 if __name__ == "__main__":
