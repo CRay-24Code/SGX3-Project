@@ -99,6 +99,37 @@ def get_year():
     years.sort()
     return jsonify({"years":years})
 
+@app.route("/hazard_count")
+def hazard_count_by_year():
+    global traffic_df
+
+    #Ensure the data is loaded
+    if traffic_df is None:
+        return jsonify({"error": "Data not loaded"}), 500
+    
+    year_param = request.args.get("year")
+    if not year_param:
+        return jsonify({"error": "Missing 'year' query parameter"}), 400
+
+    try:
+        year = int(year_param)
+    except ValueError:
+        return jsonify({"error": "Invalid year format"}), 400
+
+    #Filter for the given year and Traffic Hazard
+    filtered_df = traffic_df[
+            (traffic_df["Year"] == year) &
+            (traffic_df["Issue Reported"].str.contains("Traffic Hazard", na=False, case=False))
+            ]
+    count = len(filtered_df)
+
+    return jsonify({
+        "year": year,
+        "issue": "Traffic Hazard",
+        "count": count
+        })
+
+
 
 if __name__ == "__main__":
     load_traffic_data()  # <- This runs BEFORE the server starts
