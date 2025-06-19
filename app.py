@@ -16,7 +16,8 @@ def load_traffic_data():
     if "Published Date" in traffic_df.columns:
         traffic_df["Published Date"] = pd.to_datetime(traffic_df["Published Date"], errors ="coerce")
         traffic_df["Year"] = traffic_df["Published Date"].dt.year
-        print("Extracted 'Year' from Published Date'.")
+        traffic_df["Hour"] = traffic_df["Published Date"].dt.year
+        print("Extracted 'Year' and 'Hour' from Published Date'.")
     else:
         print("Column 'Published Date' not found.")
 
@@ -133,6 +134,56 @@ def hazard_count_by_year():
        #"count": len(records), #For the full records /unexpected character
        #"reports": records     #Also for the full records
         })
+
+@app.route("/hour")
+def get_hour():
+    global traffic_df
+
+    if "Hour" not in traffic_df.columns:
+        return jsonify({"error": "'Hour' column not available"}), 500
+
+    hours = traffic_df["Hour"].dropna().unique().tolist()
+    hours.sort()
+
+    return jsonify({"unique_hours": hours})
+
+@app.route("/by_hour_range")
+def filter_by_hour_range():
+    global traffic_df
+
+    #validate that the data is loaded
+    if traffic_df is None or "Hour" not in traffic_df.columns:
+        return jsonify({"error": "Data not loaded or 'Hour' column missing"}), 500
+
+    start_hour = request.args.get("start")
+    end_hour = request.args.get("end")
+
+    if start_hour is None or end_hour is None:
+        return jsonify({"error": "Missing 'start' or 'end' hour parameter"}), 400
+
+    #validate input is integer and within 0-23
+    try:
+        start_hour = int(start_hour)
+        end_hour = int(end_hour)
+        if not (0 <= start_hour <= 23 and 0 <= end_hour <= 23):
+            raise ValueError
+    except ValueError:
+            return jsonify({"error": "Hour must be integers between 0 and 23"}), 400
+
+    # Filter data between the given hours
+    filtered_df = traffic_df[
+        (traffic_df["Hour"] >= start_hour) &
+        (traffic_df["Hour"] <= end_hour)
+    ]
+
+    results = filtered_df.to_dict(orient="records")
+
+    return jsonify({
+        "start_hour": start_hour,
+        "end_hour": end_hour,
+        "count": len(results),
+        "records": results
+    })
 
 
 
