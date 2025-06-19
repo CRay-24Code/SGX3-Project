@@ -121,12 +121,17 @@ def hazard_count_by_year():
             (traffic_df["Year"] == year) &
             (traffic_df["Issue Reported"].str.contains("Traffic Hazard", na=False, case=False))
             ]
+
     count = len(filtered_df)
+
+    #records = filtered_df.to_dict(orient="records") #Full matching rows
 
     return jsonify({
         "year": year,
         "issue": "Traffic Hazard",
         "count": count
+       #"count": len(records), #For the full records /unexpected character
+       #"reports": records     #Also for the full records
         })
 
 
