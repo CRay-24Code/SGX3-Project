@@ -257,6 +257,29 @@ def cleaned_geo():
         "records": records
         })
 
+@app.route("/rush_hour")
+def rush_hour():
+    global traffic_df
+
+    if traffic_df is None:
+        return jsonify({"error": "Data not loaded"}), 500
+
+    if "Hour" not in traffic_df.columns:
+        return jsonify({"error": "'Hour' column not available"}), 500
+
+    #Create a boolean mask for rush hour
+    traffic_df["rush_hour"] = (
+            ((traffic_df["Hour"] >= 7) & (traffic_df["Hour"] <= 9)) |
+            ((traffic_df["Hour"] >= 16) & (traffic_df["Hour"] <= 18))
+            )
+
+    #Filter just the rush hour records
+    rush_df = traffic_df[traffic_df["rush_hour"] == True]
+
+    return jsonify({
+        "count": len(rush_df),
+        "rush_hour_records": rush_df.to_dict(orient="records")
+        })
 
 if __name__ == "__main__":
     load_traffic_data()  # <- This runs BEFORE the server starts
