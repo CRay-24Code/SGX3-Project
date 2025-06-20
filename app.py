@@ -281,6 +281,57 @@ def rush_hour():
         "rush_hour_records": rush_df.to_dict(orient="records")
         })
 
+@app.route("/rush_hour_nearby")
+def rush_hour_nearby():
+    global traffic_df
+
+    if traffic_df is None:
+        return jsonify({"error": "Data not loaded"}), 500
+
+    #Get query parameters
+    try:
+        lat = float(request.args.get("lat"))
+        lon = float(request.args.get("lon"))
+        year = int(request.args.get("year"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Missing or invalid 'lat', 'lon', or 'year' parameters"}), 400
+
+    #Ensure required columns are present
+    if not all(col in traffic_df.columns for col in ["Latitude", "Longitude", "Hour", "Year"]):
+        return jsonify({"error": "Missing necessary columns in data"}), 500
+
+    #Filter out bad/missing coordinates
+    df = traffic_df[
+            (traffic_df["Latitude"].notnull()) &
+            (traffic_df["Longitude"].notnull()) &
+            (traffic_df["Latitude"] != 0) &
+            (traffic_df["Longitude"] != 0)
+            ].copy()
+
+    #Ensure 'rush hour' column exists
+    if "rush_hour" not in df.columns:
+        df["rush_hour"] = (
+                ((df["Hour"] >= 7) & (df["Hour"] <= 9)) |
+                ((df["Hour"] >= 16) & (df["Hour"] <= 18))
+                )
+
+    #Compute distance
+    df["distance_km"] = haversine(lat, lon, df["Latitude"], df["Longitude"])
+
+    #Filter: within 1 km, rush hour, specific year
+    filtered = df[
+            (df["distance_km"] <= 1.0) &
+            (df["rush_hour"] == True) &
+            (df["Year"] == year)
+            ]
+
+    return jsonify({
+        "input_location": {"latitude": lat, "longitude": lon},
+        "year": year,
+        "count": len(filtered),
+        "records": filtered.to_dict(orient="records")
+        })
+
 if __name__ == "__main__":
     load_traffic_data()  # <- This runs BEFORE the server starts
     app.run(debug=True, host="0.0.0.0", port=8031)
