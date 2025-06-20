@@ -1,5 +1,6 @@
 from flask import Flask, jsonify, request
 import pandas as pd
+import numpy as np
 import os
 
 # Define your global DataFrame
@@ -16,7 +17,7 @@ def load_traffic_data():
     if "Published Date" in traffic_df.columns:
         traffic_df["Published Date"] = pd.to_datetime(traffic_df["Published Date"], errors ="coerce")
         traffic_df["Year"] = traffic_df["Published Date"].dt.year
-        traffic_df["Hour"] = traffic_df["Published Date"].dt.year
+        traffic_df["Hour"] = traffic_df["Published Date"].dt.hour
         print("Extracted 'Year' and 'Hour' from Published Date'.")
     else:
         print("Column 'Published Date' not found.")
@@ -109,6 +110,8 @@ def hazard_count_by_year():
         return jsonify({"error": "Data not loaded"}), 500
     
     year_param = request.args.get("year")
+    full = request.args.get("full", "false").lower() == "true"
+
     if not year_param:
         return jsonify({"error": "Missing 'year' query parameter"}), 400
 
@@ -123,17 +126,16 @@ def hazard_count_by_year():
             (traffic_df["Issue Reported"].str.contains("Traffic Hazard", na=False, case=False))
             ]
 
-    count = len(filtered_df)
+    result = {
+            "year": year,
+            "issue": "Traffic Hazard",
+            "count": len(filtered_df)
+            }
 
-    #records = filtered_df.to_dict(orient="records") #Full matching rows
+    if full:
+        result["reports"] = filtered_df.to_dict(orient="records")
 
-    return jsonify({
-        "year": year,
-        "issue": "Traffic Hazard",
-        "count": count
-       #"count": len(records), #For the full records /unexpected character
-       #"reports": records     #Also for the full records
-        })
+    return jsonify(result)
 
 @app.route("/hour")
 def get_hour():
@@ -142,10 +144,16 @@ def get_hour():
     if "Hour" not in traffic_df.columns:
         return jsonify({"error": "'Hour' column not available"}), 500
 
-    hours = traffic_df["Hour"].dropna().unique().tolist()
-    hours.sort()
-
-    return jsonify({"unique_hours": hours})
+    #Drop nulls, get frequency convert to dict
+    hour_counts = (
+            traffic_df["Hour"]
+            .dropna()
+            .astype(int)
+            .value_counts()
+            .sort_index()
+            .to_dict()
+            )
+    return jsonify({"hour_frequencies": hour_counts})
 
 @app.route("/by_hour_range")
 def filter_by_hour_range():
@@ -185,6 +193,69 @@ def filter_by_hour_range():
         "records": results
     })
 
+def haversine(lat1, lon1, lat2, lon2):
+    #Radius of earth in kilometers
+    R = 6371.0
+    #Convert degrees to radius
+    lat1_rad, lon1_rad = np.radians(lat1), np.radians(lon1)
+    lat2_rad, lon2_rad = np.radians(lat2), np.radians(lon2)
+    #Haversine formula
+    dlat = lat2_rad - lat1_rad
+    dlon = lon2_rad - lon1_rad
+    a = np.sin(dlat / 2.0) ** 2 + np.cos(lat1_rad) * np.cos(lat2_rad) * np.sin(dlon / 2.0) ** 2
+    c = 2 * np.arcsin(np.sqrt(a))
+    return R * c #Distance in kilometers
+
+@app.route("/nearby_incidents")
+def nearby_incidents():
+    global traffic_df
+
+    if "Latitude" not in traffic_df.columns or "Longitude" not in traffic_df.columns:
+        return jsonify({"error": "Latitude/Longitude columns missing"}), 500
+
+    try:
+        lat = float(request.args.get("lat"))
+        lon = float(request.args.get("lon"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid or missing 'lat' or 'lon' query parameters"}), 400
+
+    #Drop rows with missing coordinates
+    df = traffic_df.dropna(subset=["Latitude", "Longitude"]).copy()
+
+    #Compare distance
+    df["Distance_km"] = haversine(lat, lon, df["Latitude"], df["Longitude"])
+
+    #Filter within 1 km
+    nearby_df = df[df["Distance_km"] <= 1]
+
+    return jsonify({
+        "input_location": {"lat": lat, "lon": lon},
+        "count": len(nearby_df),
+        "records": nearby_df.to_dict(orient="records")
+        })
+
+@app.route("/cleaned_geo")
+def cleaned_geo():
+    global traffic_df
+
+    if traffic_df is None:
+        return jsonify({"error": "Data not loaded"}), 500
+
+    #Apply the filtering
+    cleaned_df = traffic_df[
+            (traffic_df["Latitude"] != 0) &
+            (traffic_df["Longitude"] != 0) &
+            (traffic_df["Latitude"] <= 35)
+            ]
+
+    #Convert to JSON
+    records = cleaned_df.to_dict(orient="records")
+
+    return jsonify({
+        "original_count": len(traffic_df),
+        "filtered_count": len(cleaned_df),
+        "records": records
+        })
 
 
 if __name__ == "__main__":
